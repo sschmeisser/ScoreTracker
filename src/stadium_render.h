@@ -76,23 +76,16 @@ const int GOAL_RIGHT_X = 218;
 #define HOCKEY_GLASS_CY   0x8E1E  // Acrylic reflection cyan ambient hue
 #define HOCKEY_NET_MESH   0xE73C  // Goal netting silver-white mesh
 
-// 3. Basketball Court Multi-Tone Palette
-#define BASKET_HONEY      0xE56A  // High-varnish honey oak hardwood plank
-#define BASKET_AMBER      0xDC88  // Warm amber oak hardwood plank
-#define BASKET_MAPLE      0xD446  // Golden select maple plank
-#define BASKET_PECAN      0xC363  // Deep pecan plank accent
-#define BASKET_GRAIN      0xB302  // Subtle oak wood grain striation
-#define BASKET_GROOVE     0x71E1  // Dark varnish plank tongue-and-groove seam
-#define BASKET_KEY_RED    0x8882  // Deep arcade crimson key paint lane
-#define BASKET_KEY_SHD    0x5800  // Key paint lane perimeter bevel shadow
-#define BASKET_LINE       0xFFFF  // Boundary & 3-point lines
-#define BASKET_SEAM       0x2104  // Center basketball emblem black seam
-#define BASKET_ORANGE     0xF3C0  // Authentic basketball pebbled leather orange
-#define BASKET_ORANGE_D   0xC260  // Basketball emblem 3D spherical shadow
-#define BASKET_ORANGE_L   0xFD20  // Basketball emblem 3D spherical highlight
-#define BASKET_GLOSS      0xFEC0  // Overhead arena spotlight specular sheen glint
+// 3. Basketball Court Multi-Tone Palette (Smooth Low-Noise Matte Maple)
+#define BASKET_MAPLE_A    0xB58B  // Warm golden maple plank (rich contrast with white lines)
+#define BASKET_MAPLE_B    0xAD49  // Subdued secondary maple plank
+#define BASKET_MAPLE_SEAM 0x9CE7  // Gentle 1px horizontal plank seam
+#define BASKET_KEY_RED    0x9882  // Deep arcade crimson key paint lane
+#define BASKET_KEY_SHD    0x6800  // Key paint lane subtle perimeter shadow
+#define BASKET_LINE       0xFFFF  // Boundary & 3-point lines (pure crisp white)
 #define BASKET_HOOP_RIM   0xF960  // Heavy-duty breakaway rim orange
 #define BASKET_NET        0xFFFF  // White braided nylon hoop net
+#define BASKET_GLOSS      0xD6B3  // Subtle soft arena wood sheen
 
 // 4. Baseball Field Multi-Tone Palette
 #define BASEBALL_TURF_A   0x24C5  // Outfield manicured emerald grass
@@ -583,8 +576,7 @@ static void render_basketball_court(LGFX_Sprite &canvas) {
   int cx = 120, cy = 120;
   int r = 117;
 
-  // A. High-Gloss Varnished Parquet Hardwood Floor with Alternating Wood Planks
-  // Tile dimensions: 16px wide x 8px tall parquet blocks
+  // A. Smooth Matte Maple Hardwood Floor (Calm, low-noise, high player/ball contrast)
   for (int y = PITCH_MIN_Y; y <= PITCH_MAX_Y; y++) {
     int dy = y - cy;
     int max_w = (int)sqrtf((float)(r * r - dy * dy));
@@ -594,57 +586,14 @@ static void render_basketball_court(LGFX_Sprite &canvas) {
     if (x2 > PITCH_MAX_X) x2 = PITCH_MAX_X;
     if (x1 >= x2) continue;
 
-    int ty = (y - PITCH_MIN_Y) / 8;
-    int py = (y - PITCH_MIN_Y) % 8;
+    int plank_idx = (y - PITCH_MIN_Y) / 14;
+    int plank_y   = (y - PITCH_MIN_Y) % 14;
+
+    uint16_t row_col = (plank_idx % 2 == 0) ? BASKET_MAPLE_A : BASKET_MAPLE_B;
+    if (plank_y == 0) row_col = BASKET_MAPLE_SEAM;
 
     for (int x = x1; x <= x2; x++) {
-      int tx = (x - PITCH_MIN_X) / 16;
-      int px = (x - PITCH_MIN_X) % 16;
-
-      // Dark varnish groove on tile borders
-      if (px == 0 || py == 0) {
-        buf[y * 240 + x] = BASKET_GROOVE;
-        continue;
-      }
-
-      // Alternating grain direction (horizontal parquet block vs vertical parquet block)
-      bool horiz_grain = ((tx + ty) & 1) == 0;
-      uint16_t base_wood;
-      int tile_hash = (tx * 5 + ty * 11) & 3;
-      if (tile_hash == 0) base_wood = BASKET_HONEY;
-      else if (tile_hash == 1) base_wood = BASKET_AMBER;
-      else if (tile_hash == 2) base_wood = BASKET_MAPLE;
-      else base_wood = BASKET_PECAN;
-
-      // Wood grain striations
-      if (horiz_grain) {
-        if (py == 3 || py == 6) base_wood = BASKET_GRAIN;
-      } else {
-        if (px == 4 || px == 8 || px == 12) base_wood = BASKET_GRAIN;
-      }
-
-      // Overhead Arena Spotlight Specular Highlight (High-gloss floor reflection)
-      int s_dx = x - 120;
-      int s_dy = (y - 116) * 3 / 2;
-      int dist2 = s_dx * s_dx + s_dy * s_dy;
-      if (dist2 < 4200) {
-        // Boost luminance smoothly towards center
-        uint32_t boost = (4200 - dist2) * 55 / 4200; // 0 to 55 boost
-        uint32_t red = ((base_wood >> 11) & 0x1F) + (boost * 5 >> 6);
-        uint32_t grn = ((base_wood >> 5) & 0x3F) + (boost * 8 >> 6);
-        uint32_t blu = (base_wood & 0x1F) + (boost * 4 >> 6);
-        if (red > 31) red = 31;
-        if (grn > 63) grn = 63;
-        if (blu > 31) blu = 31;
-        base_wood = (uint16_t)((red << 11) | (grn << 5) | blu);
-
-        // Specular glint hotspot
-        if (dist2 < 650 && ((x ^ y) & 1)) {
-          base_wood = BASKET_GLOSS;
-        }
-      }
-
-      buf[y * 240 + x] = base_wood;
+      buf[y * 240 + x] = row_col;
     }
   }
 
@@ -702,28 +651,10 @@ static void render_basketball_court(LGFX_Sprite &canvas) {
     }
   }
 
-  // E. Center Court Basketball Seam Emblem & Center Circle
+  // E. Center Court Jump Circle (Clean regulation markings - NO distracting orange ball!)
   canvas.drawCircle(120, 129, 24, BASKET_LINE);
-  // Basketball Emblem Sphere
-  canvas.fillCircle(120, 129, 13, BASKET_ORANGE);
-  // 3D spherical depth shading on basketball
-  for (int dy = -13; dy <= 13; dy++) {
-    int hw = (int)sqrtf((float)(13 * 13 - dy * dy));
-    for (int dx = -hw; dx <= hw; dx++) {
-      if (dx + dy > 7) {
-        canvas.drawPixel(120 + dx, 129 + dy, BASKET_ORANGE_D);
-      } else if (dx + dy < -7) {
-        canvas.drawPixel(120 + dx, 129 + dy, BASKET_ORANGE_L);
-      }
-    }
-  }
-  // Seam lines (black cross & curved side seams)
-  canvas.drawFastHLine(108, 129, 25, BASKET_SEAM);
-  canvas.drawFastVLine(120, 117, 25, BASKET_SEAM);
-  // Curved side seams
-  canvas.drawCircle(113, 129, 9, BASKET_SEAM);
-  canvas.drawCircle(127, 129, 9, BASKET_SEAM);
-  canvas.drawCircle(120, 129, 13, BASKET_SEAM);
+  canvas.drawCircle(120, 129, 8, BASKET_LINE);
+  canvas.fillCircle(120, 129, 2, BASKET_LINE);
 
   // F. 3D Basketball Hoops (Backboard, Target Box, Orange Rim & Net)
   // Left Hoop

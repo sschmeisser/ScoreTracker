@@ -210,11 +210,24 @@ void enter_device_sleep() {
   canvas.fillScreen(COL_BLACK);
   canvas.pushSprite(0, 0);
 
-  // Configure BOOT button (GPIO 9) as low-level deep sleep wakeup trigger
-  esp_deep_sleep_enable_gpio_wakeup((1ULL << BOOT_BTN_PIN), ESP_GPIO_WAKEUP_GPIO_LOW);
+  // Configure BOOT button (GPIO 9) as level wakeup for light sleep (supported on all GPIOs on ESP32-C3)
+  gpio_wakeup_enable((gpio_num_t)BOOT_BTN_PIN, GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
 
-  // Enter deep sleep
-  esp_deep_sleep_start();
+  // Enter light sleep (powers down CPU, retains SRAM & current game state!)
+  esp_light_sleep_start();
+
+  // --- WAKE UP HANDLER ---
+  // Execution resumes here immediately when BOOT button is clicked!
+  gpio_wakeup_disable((gpio_num_t)BOOT_BTN_PIN);
+  lcd.wakeup();
+  for (int b = 0; b <= 255; b += 25) {
+    lcd.setBrightness(b);
+    delay(10);
+  }
+  lcd.setBrightness(255);
+  last_button_activity_ms = millis();
+  Serial.println("Device awakened from sleep by BOOT button!");
 }
 
 // ============================================================================
@@ -370,15 +383,29 @@ void draw_ball() {
       canvas.fillRect(bx - 2, ball_draw_y - 1, 5, 3, COL_PUCK);
     }
   } else if (current_sport == SPORT_BASKETBALL) {
-    // Basketball (orange with black cross seams)
+    // Dynamic ground shadow underneath basketball
+    int shadow_y = (int)ball.y;
+    int shadow_w = (ball.z > 0) ? 3 : 4;
+    canvas.fillEllipse(bx, shadow_y + 1, shadow_w, 2, COL_SHADOW);
+
     if (ball.is_super) {
       uint16_t s_col = ((millis() / 50) % 2 == 0) ? COL_GOLD : 0xFD20;
-      canvas.fillCircle(bx - (int)(ball.vx * 1.5f), ball_draw_y - (int)(ball.vy * 1.5f), 4, s_col);
-      canvas.fillCircle(bx, ball_draw_y, 4, COL_BASKET_BALL);
+      canvas.fillCircle(bx - (int)(ball.vx * 1.5f), ball_draw_y - (int)(ball.vy * 1.5f), 5, s_col);
+      canvas.fillCircle(bx, ball_draw_y, 5, COL_BLACK);
+      canvas.fillCircle(bx, ball_draw_y, 4, 0xFD20);
+      canvas.drawCircle(bx, ball_draw_y, 4, COL_BLACK);
+      spawn_particle(bx, ball_draw_y, -ball.vx * 0.4f, -0.8f, COL_GOLD, 8);
     } else {
-      canvas.fillCircle(bx, ball_draw_y, 4, COL_BASKET_BALL);
-      canvas.drawFastHLine(bx - 3, ball_draw_y, 7, COL_BASKET_SEAM);
-      canvas.drawFastVLine(bx, ball_draw_y - 3, 7, COL_BASKET_SEAM);
+      // High-contrast 1px black outline (radius 5)
+      canvas.fillCircle(bx, ball_draw_y, 5, COL_BLACK);
+      // Saturated vivid arcade basketball orange interior (radius 4)
+      canvas.fillCircle(bx, ball_draw_y, 4, 0xFD00);
+      // Crisp black cross seams
+      canvas.drawFastHLine(bx - 3, ball_draw_y, 7, COL_BLACK);
+      canvas.drawFastVLine(bx, ball_draw_y - 3, 7, COL_BLACK);
+      // 3D Specular highlight glint (pure white pixel at top-left)
+      canvas.drawPixel(bx - 1, ball_draw_y - 1, COL_WHITE);
+      canvas.drawPixel(bx - 2, ball_draw_y - 1, 0xFF90);
     }
   } else if (current_sport == SPORT_BASEBALL) {
     // White baseball with red seam
@@ -585,7 +612,6 @@ void swing_bat() {
     if (dist <= 4.0f) {
       // *** PERFECT SWEET SPOT HIT: TOWERING HOME RUN! (within ±4px) ***
       Serial.printf("Baseball: CRACK! PERFECT HIT (dist=%.1f) -> TOWERING HOME RUN!\n", dist);
-      Serial.flush();
       bb_state = BB_HOMERUN;
       hit_feedback_type = 1; // PERFECT
       hit_feedback_timer = 35;
@@ -611,7 +637,6 @@ void swing_bat() {
     } else if (dist <= 10.0f) {
       // *** GOOD HIT: Solid line drive / base hit into outfield (within ±10px) ***
       Serial.printf("Baseball: SOLID BASE HIT (dist=%.1f)!\n", dist);
-      Serial.flush();
       bb_state = BB_HIT_IN_PLAY;
       hit_feedback_type = 2; // GOOD
       hit_feedback_timer = 25;
@@ -632,14 +657,12 @@ void swing_bat() {
     } else {
       // *** MISS / FOUL (far from middle) ***
       Serial.printf("Baseball: MISS / FOUL (dist=%.1f)!\n", dist);
-      Serial.flush();
       hit_feedback_type = 3; // MISS
       hit_feedback_timer = 20;
     }
   } else {
     // Swung with no pitch in air
     Serial.println("Baseball: Practice swing (no pitch in flight)!");
-    Serial.flush();
     hit_feedback_type = 3;
     hit_feedback_timer = 15;
     spawn_particle(players[1].x + 8, players[1].y, 2.0f, 0, COL_WHITE, 6);
@@ -812,7 +835,6 @@ void update_baseball_ai() {
         ball.vz = 0.4f;
         ball.is_super = false;
         Serial.println("Baseball: Pitch thrown DOWNWARD toward home plate (vy=+3.8)!");
-        Serial.flush();
       }
       break;
     }
@@ -839,7 +861,6 @@ void update_baseball_ai() {
         ball.vx = 0; ball.vy = 0; ball.vz = 0;
         spawn_particle(120.0f, 202.0f, 0, -0.6f, COL_WHITE, 8); // Mitt catch puff
         Serial.println("Baseball: Ball in catcher's mitt at home plate!");
-        Serial.flush();
       }
       break;
     }
@@ -859,7 +880,6 @@ void update_baseball_ai() {
         ball.vy = -3.4f; // Toss UP toward pitcher
         ball.vz = 1.2f;
         Serial.println("Baseball: Catcher tosses ball back to pitcher!");
-        Serial.flush();
       }
       break;
     }
@@ -882,7 +902,6 @@ void update_baseball_ai() {
         ball.vx = 0; ball.vy = 0; ball.vz = 0;
         spawn_particle(120.0f, 140.0f, 0, 0.5f, COL_WHITE, 6);
         Serial.println("Baseball: Pitcher caught ball, preparing next pitch!");
-        Serial.flush();
       }
       break;
     }
@@ -989,7 +1008,6 @@ void update_baseball_ai() {
       // CRITICAL: HOME RUN ONLY TRIGGERS ON FAIR BALL HIT UPWARD (vy < 0, y < 52)
       if (ball.y < 52.0f && ball.vy < 0.0f && goal_banner_timer == 0) {
         Serial.printf("HOME RUN OVER THE FENCE! y=%.1f vy=%.2f\n", ball.y, ball.vy);
-        Serial.flush();
         score_red++;
         goal_banner_timer = 120;
         goal_scoring_team = 0; // Red batter scores!
@@ -1385,6 +1403,7 @@ void update_ai() {
 // ============================================================================
 void setup() {
   Serial.begin(115200);
+  Serial.setTxTimeoutMs(0);
   delay(200);
   Serial.println("Kunio-kun Multi-Sport Championship initializing...");
 
@@ -1420,6 +1439,12 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t last_dbg = 0;
+  if (millis() - last_dbg >= 1000) {
+    last_dbg = millis();
+    Serial.printf("DBG: sport=%d state=%d timer=%d y=%.1f\n", (int)current_sport, (int)bb_state, bb_timer, ball.y);
+  }
+
   // Check physical BOOT button (GPIO 9) and Serial input
   bool btn_raw = (digitalRead(BOOT_BTN_PIN) == LOW);
 
@@ -1458,7 +1483,7 @@ void loop() {
     } else if (c == 'l' || c == 'e') {
       long_press_active = !long_press_active;
       if (long_press_active) {
-        if (ball.owner != -1) {
+        if (ball.owner >= 0 && ball.owner < NUM_PLAYERS) {
           float dist_top = players[ball.owner].y - (float)PITCH_MIN_Y;
           float dist_bot = (float)PITCH_MAX_Y - players[ball.owner].y;
           evade_direction = (dist_top > dist_bot) ? -1 : 1;
@@ -1493,7 +1518,7 @@ void loop() {
         if (!long_press_fired && current_sport != SPORT_BASEBALL) {
           long_press_fired = true;
           long_press_active = true;
-          if (ball.owner != -1) {
+          if (ball.owner >= 0 && ball.owner < NUM_PLAYERS) {
             float dist_top = players[ball.owner].y - (float)PITCH_MIN_Y;
             float dist_bot = (float)PITCH_MAX_Y - players[ball.owner].y;
             evade_direction = (dist_top > dist_bot) ? -1 : 1;

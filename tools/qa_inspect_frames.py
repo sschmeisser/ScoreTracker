@@ -74,23 +74,17 @@ COL_PUCK          = 0x1082
 COL_STICK_WOOD    = 0xC443
 COL_BLADE_SILV    = 0xD6BA
 
-# Basketball
-BASKET_HONEY      = 0xE56A
-BASKET_AMBER      = 0xDC88
-BASKET_MAPLE      = 0xD446
-BASKET_PECAN      = 0xC363
-BASKET_GRAIN      = 0xB302
-BASKET_GROOVE     = 0x71E1
-BASKET_KEY_RED    = 0x8882
-BASKET_KEY_SHD    = 0x5800
+# Basketball (Smooth Low-Noise Matte Maple)
+BASKET_MAPLE_A    = 0xB58B
+BASKET_MAPLE_B    = 0xAD49
+BASKET_MAPLE_SEAM = 0x9CE7
+BASKET_KEY_RED    = 0x9882
+BASKET_KEY_SHD    = 0x6800
 BASKET_LINE       = 0xFFFF
-BASKET_SEAM       = 0x2104
-BASKET_ORANGE     = 0xF3C0
-BASKET_ORANGE_D   = 0xC260
-BASKET_ORANGE_L   = 0xFD20
-BASKET_GLOSS      = 0xFEC0
 BASKET_HOOP_RIM   = 0xF960
 BASKET_NET        = 0xFFFF
+BASKET_GLOSS      = 0xD6B3
+BASKET_BALL_VIVID = 0xFD00
 
 # Baseball
 BASEBALL_TURF_A   = 0x24C5
@@ -669,6 +663,7 @@ def render_basketball_court(canvas: Canvas565):
     buf = canvas.buf
     cx, cy, r = 120, 120, 117
 
+    # A. Smooth Matte Maple Hardwood Floor (Calm, low-noise, high contrast)
     for y in range(PITCH_MIN_Y, PITCH_MAX_Y + 1):
         dy = y - cy
         max_w = int(math.sqrt(max(0, r * r - dy * dy)))
@@ -677,52 +672,15 @@ def render_basketball_court(canvas: Canvas565):
         if x1 >= x2:
             continue
 
-        ty = (y - PITCH_MIN_Y) // 8
-        py = (y - PITCH_MIN_Y) % 8
+        plank_idx = (y - PITCH_MIN_Y) // 14
+        plank_y   = (y - PITCH_MIN_Y) % 14
+
+        row_col = BASKET_MAPLE_A if (plank_idx % 2 == 0) else BASKET_MAPLE_B
+        if plank_y == 0:
+            row_col = BASKET_MAPLE_SEAM
 
         for x in range(x1, x2 + 1):
-            tx = (x - PITCH_MIN_X) // 16
-            px = (x - PITCH_MIN_X) % 16
-
-            if px == 0 or py == 0:
-                buf[y * 240 + x] = BASKET_GROOVE
-                continue
-
-            horiz_grain = ((tx + ty) & 1) == 0
-            tile_hash = (tx * 5 + ty * 11) & 3
-            if tile_hash == 0:
-                base_wood = BASKET_HONEY
-            elif tile_hash == 1:
-                base_wood = BASKET_AMBER
-            elif tile_hash == 2:
-                base_wood = BASKET_MAPLE
-            else:
-                base_wood = BASKET_PECAN
-
-            if horiz_grain:
-                if py == 3 or py == 6:
-                    base_wood = BASKET_GRAIN
-            else:
-                if px == 4 or px == 8 or px == 12:
-                    base_wood = BASKET_GRAIN
-
-            s_dx = x - 120
-            s_dy = (y - 116) * 3 // 2
-            dist2 = s_dx * s_dx + s_dy * s_dy
-            if dist2 < 4200:
-                boost = (4200 - dist2) * 55 // 4200
-                red = ((base_wood >> 11) & 0x1F) + (boost * 5 >> 6)
-                grn = ((base_wood >> 5) & 0x3F) + (boost * 8 >> 6)
-                blu = (base_wood & 0x1F) + (boost * 4 >> 6)
-                red = min(31, red)
-                grn = min(63, grn)
-                blu = min(31, blu)
-                base_wood = (red << 11) | (grn << 5) | blu
-
-                if dist2 < 650 and ((x ^ y) & 1):
-                    base_wood = BASKET_GLOSS
-
-            buf[y * 240 + x] = base_wood
+            buf[y * 240 + x] = row_col
 
     # Boundary & lines
     canvas.drawRect(PITCH_MIN_X + 8, PITCH_MIN_Y + 4, (PITCH_MAX_X - PITCH_MIN_X) - 16, (PITCH_MAX_Y - PITCH_MIN_Y) - 8, BASKET_LINE)
@@ -758,21 +716,10 @@ def render_basketball_court(canvas: Canvas565):
         if ax <= PITCH_MAX_X - 24 and 52 <= ay <= 206:
             canvas.drawPixel(ax, ay, BASKET_LINE)
 
-    # Center circle & basketball emblem
+    # Center circle (clean regulation circle, no distracting orange ball)
     canvas.drawCircle(120, 129, 24, BASKET_LINE)
-    canvas.fillCircle(120, 129, 13, BASKET_ORANGE)
-    for dy in range(-13, 14):
-        hw = int(math.sqrt(max(0, 13 * 13 - dy * dy)))
-        for dx in range(-hw, hw + 1):
-            if dx + dy > 7:
-                canvas.drawPixel(120 + dx, 129 + dy, BASKET_ORANGE_D)
-            elif dx + dy < -7:
-                canvas.drawPixel(120 + dx, 129 + dy, BASKET_ORANGE_L)
-    canvas.drawFastHLine(108, 129, 25, BASKET_SEAM)
-    canvas.drawFastVLine(120, 117, 25, BASKET_SEAM)
-    canvas.drawCircle(113, 129, 9, BASKET_SEAM)
-    canvas.drawCircle(127, 129, 9, BASKET_SEAM)
-    canvas.drawCircle(120, 129, 13, BASKET_SEAM)
+    canvas.drawCircle(120, 129, 8, BASKET_LINE)
+    canvas.fillCircle(120, 129, 2, BASKET_LINE)
 
     # Hoops
     canvas.fillRect(PITCH_MIN_X + 6, 114, 3, 30, COL_WHITE)
@@ -984,9 +931,11 @@ def draw_ball(canvas: Canvas565, sport_name: str, x: int, y: int):
     elif sport_name == "HOCKEY":
         canvas.fillRect(x - 2, y - 1, 5, 3, COL_PUCK)
     elif sport_name == "BASKETBALL":
-        canvas.fillCircle(x, y, 4, BASKET_ORANGE)
-        canvas.drawFastHLine(x - 3, y, 7, BASKET_SEAM)
-        canvas.drawFastVLine(x, y - 3, 7, BASKET_SEAM)
+        canvas.fillCircle(x, y, 5, COL_BLACK)
+        canvas.fillCircle(x, y, 4, BASKET_BALL_VIVID)
+        canvas.drawFastHLine(x - 3, y, 7, COL_BLACK)
+        canvas.drawFastVLine(x, y - 3, 7, COL_BLACK)
+        canvas.drawPixel(x - 1, y - 1, COL_WHITE)
     elif sport_name == "BASEBALL":
         canvas.fillCircle(x, y, 3, COL_WHITE)
         canvas.drawPixel(x - 1, y, BASKET_HOOP_RIM)
@@ -1274,7 +1223,7 @@ def run_qa_inspection():
     cr_soccer = contrast_ratio(chalk_col, grass_col)
     print(f"  - Soccer Chalk vs Emerald Grass Contrast: {cr_soccer:.2f}:1 (Target > 3.0:1)")
 
-    wood_col = rgb565_to_rgb888(BASKET_HONEY)
+    wood_col = rgb565_to_rgb888(BASKET_MAPLE_A)
     court_line_col = rgb565_to_rgb888(BASKET_LINE)
     cr_basket = contrast_ratio(court_line_col, wood_col)
     print(f"  - Basketball Line vs Hardwood Contrast:   {cr_basket:.2f}:1 (Target > 1.8:1)")
@@ -1312,9 +1261,19 @@ def run_qa_inspection():
     print(f"  >>> RESULT: {'[PASS]' if test4_pass else '[FAIL]'} Circular Bezel Clamping (0 Leaks)")
 
     # -------------------------------------------------------------------------
+    # TEST 5: Basketball Ball Visibility & Outline Pop
+    # -------------------------------------------------------------------------
+    print("\n[QA TEST 5] Basketball Ball Visibility against Hardwood Court:")
+    ball_outline_col = rgb565_to_rgb888(COL_BLACK)
+    cr_ball_outline = contrast_ratio(wood_col, ball_outline_col)
+    print(f"  - Ball Black Outline vs Maple Court Contrast: {cr_ball_outline:.2f}:1 (Target >= 5.0:1)")
+    test5_pass = (cr_ball_outline >= 5.0)
+    print(f"  >>> RESULT: {'[PASS]' if test5_pass else '[FAIL]'} Basketball High-Visibility Outline Pop")
+
+    # -------------------------------------------------------------------------
     # OVERALL CERTIFICATION SUMMARY
     # -------------------------------------------------------------------------
-    all_passed = test1_pass and test2_pass and test3_pass and test4_pass
+    all_passed = test1_pass and test2_pass and test3_pass and test4_pass and test5_pass
     print("\n" + "=" * 72)
     if all_passed:
         print("          *** VISUAL QA CERTIFICATION STATUS: APPROVED ***             ")

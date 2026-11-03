@@ -1,6 +1,28 @@
 .pio/
+**/.pio/
 .vscode/
+**/.vscode/
 __pycache__/
+**/__pycache__/
 *.pyc
 *.bin
 *.elf
+
+# Download cache for raw SVG/PNG team logos
+tools/logos_cache/
+
+# Ephemeral test renders, crops, and local dumps
+tools/crop_*.png
+tools/cyd_*.png
+tools/final_healed_*.png
+tools/healed_*.png
+tools/logo_page_*.png
+tools/car_test.png
+tools/tb_test.png
+tools/nyg_test.png
+tools/test_live_shot.png
+tools/webcam_board*.jpg
+tools/preview_*.png
+tools/hardware_*.png
+!tools/hardware_screenshot.png
+

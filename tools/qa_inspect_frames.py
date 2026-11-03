@@ -757,13 +757,13 @@ def render_baseball_field(canvas: Canvas565):
                 grass_col = 0x2D47 if stripe == 0 else 0x2484
             buf[y * 240 + x] = grass_col
 
-    # Outfield Warning Track
-    for dy in range(-142, 1):
+    # Outfield Warning Track (r_in=80, r_out=88 from home plate)
+    for dy in range(-88, 1):
         py = 195 + dy
         if py < PITCH_MIN_Y or py > PITCH_MAX_Y:
             continue
-        hw_out = int(math.sqrt(max(0, 142 * 142 - dy * dy)))
-        hw_in  = int(math.sqrt(max(0, 133 * 133 - dy * dy)))
+        hw_out = int(math.sqrt(max(0, 88 * 88 - dy * dy)))
+        hw_in  = int(math.sqrt(max(0, 80 * 80 - dy * dy)))
         for x in range(120 - hw_out, 120 - hw_in + 1):
             if PITCH_MIN_X <= x <= PITCH_MAX_X:
                 buf[py * 240 + x] = BASEBALL_TRACK if ((x ^ py) & 1) else BASEBALL_CLAY_C
@@ -771,15 +771,15 @@ def render_baseball_field(canvas: Canvas565):
             if PITCH_MIN_X <= x <= PITCH_MAX_X:
                 buf[py * 240 + x] = BASEBALL_TRACK if ((x ^ py) & 1) else BASEBALL_CLAY_C
 
-    # Outfield Fence Wall & Banners
-    for a in range(210, 331):
+    # Outfield Fence Wall & Banners (r=90 from home plate, angles 200..340)
+    for a in range(200, 341):
         rad = a * (math.pi / 180.0)
-        fx = 120 + int(math.cos(rad) * 143.0)
-        fy = 195 + int(math.sin(rad) * 143.0)
+        fx = 120 + int(math.cos(rad) * 90.0)
+        fy = 195 + int(math.sin(rad) * 90.0)
         if PITCH_MIN_X <= fx <= PITCH_MAX_X and PITCH_MIN_Y <= fy <= PITCH_MAX_Y:
             canvas.drawPixel(fx, fy, BASEBALL_FENCE)
             canvas.drawPixel(fx, fy - 1, BASEBALL_PAD_Y)
-            banner = (a // 8) % 4
+            banner = (a // 10) % 4
             if banner == 1:
                 canvas.drawPixel(fx, fy, BASEBALL_BANNER_R)
             elif banner == 3:

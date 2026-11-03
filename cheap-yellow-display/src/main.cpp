@@ -244,8 +244,8 @@ void setup() {
   init_live_data();
 
   uint32_t wifi_start = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - wifi_start < 5500)) {
-    float p = 0.35f + 0.28f * ((millis() - wifi_start) / 5500.0f);
+  while (WiFi.status() != WL_CONNECTED && (millis() - wifi_start < 7500)) {
+    float p = 0.35f + 0.28f * ((millis() - wifi_start) / 7500.0f);
     push_boot_screen(p, "CONNECTING TO WI-FI...");
     delay(100);
   }
@@ -256,8 +256,17 @@ void setup() {
     push_boot_screen(0.68f, ip_buf);
     delay(200);
   } else {
-    push_boot_screen(0.68f, "WI-FI CONNECTING IN BACKGROUND...");
-    delay(150);
+    push_boot_screen(0.50f, "PROBING OPEN WI-FI ACCESS...");
+    if (cyd_wifi_try_open_networks(canvas)) {
+      char ip_buf[48];
+      snprintf(ip_buf, sizeof(ip_buf), "OPEN WI-FI CONNECTED: %s", WiFi.localIP().toString().c_str());
+      push_boot_screen(0.68f, ip_buf);
+      delay(300);
+    } else {
+      g_wifi_ui_state = WIFI_UI_INACTIVE;
+      push_boot_screen(0.68f, "WI-FI DISCONNECTED (TAP HEADER TO SETUP)");
+      delay(300);
+    }
   }
 
   // 3. Fetch ESPN Live feeds across leagues
@@ -333,7 +342,9 @@ void loop() {
       int shot_offset_y = eased_offset_y(now_ms);
       for (int band = 0; band < 2; ++band) {
         int camera_y = band * CYD_BAND_H;
-        if (splash_mode) {
+        if (g_wifi_ui_state != WIFI_UI_INACTIVE) {
+          cyd_draw_wifi_ui(canvas, camera_y);
+        } else if (splash_mode) {
           cyd_draw_boot_screen(canvas, camera_y, splash_progress, splash_status.c_str());
         } else if (detail_open && detail_game_idx >= 0 && detail_game_idx < total_games) {
           cyd_draw_detail_screen(canvas, camera_y, games[detail_game_idx]);
@@ -448,6 +459,94 @@ void loop() {
       set_wifi_enabled(false);
     } else if (cmd == "WIFI ON") {
       set_wifi_enabled(true);
+    } else if (cmd == "WIFI SETUP" || cmd == "WIFI MANAGER") {
+      auto_tick_enabled = false;
+      cyd_wifi_open_manager(canvas);
+      Serial.println("[WIFI] Opened Wi-Fi Network Picker on LCD.");
+    } else if (cmd == "WIFI AUTO") {
+      auto_tick_enabled = false;
+      Serial.println("[WIFI] Probing open networks with verified internet access...");
+      if (cyd_wifi_try_open_networks(canvas)) {
+        fetch_live_scores();
+        auto_tick_enabled = true;
+        last_page_switch_ms = millis();
+        Serial.println("[WIFI] SUCCESS: Open Wi-Fi connected and verified!");
+      } else {
+        Serial.println("[WIFI] FAILED: No open Wi-Fi with internet access found.");
+      }
+    } else if (cmd == "WIFI SCAN") {
+      cyd_wifi_scan_networks();
+      Serial.printf("[WIFI] Scanned %d unique 2.4GHz networks:\n", g_scanned_count);
+      for (int i = 0; i < g_scanned_count; ++i) {
+        Serial.printf("  [%2d] SSID: '%-20s' | RSSI: %3d dBm | Security: %s\n",
+                      i, g_scanned_nets[i].ssid, g_scanned_nets[i].rssi,
+                      g_scanned_nets[i].is_open ? "OPEN (UNPROTECTED)" : "PROTECTED");
+      }
+    } else if (cmd == "WIFI CLEAR") {
+      cyd_wifi_clear_credentials();
+      Serial.println("[WIFI] Stored flash credentials cleared.");
+    } else if (cmd.startsWith("WIFI CONNECT ") || cmd.startsWith("CONNECT ")) {
+      String rest = cmd.startsWith("WIFI CONNECT ") ? cmd.substring(13) : cmd.substring(8);
+      rest.trim();
+      int sp = rest.indexOf(' ');
+      String ssid = (sp > 0) ? rest.substring(0, sp) : rest;
+      String pass = (sp > 0) ? rest.substring(sp + 1) : "";
+      ssid.trim(); pass.trim();
+      strncpy(g_target_ssid, ssid.c_str(), sizeof(g_target_ssid) - 1);
+      g_target_ssid[sizeof(g_target_ssid) - 1] = '\0';
+      strncpy(g_entered_pass, pass.c_str(), sizeof(g_entered_pass) - 1);
+      g_entered_pass[sizeof(g_entered_pass) - 1] = '\0';
+      g_entered_pass_len = strlen(g_entered_pass);
+      Serial.printf("[WIFI] Attempting connection to '%s' on the fly...\n", g_target_ssid);
+      if (cyd_wifi_connect_to_target(canvas)) {
+        fetch_live_scores();
+        auto_tick_enabled = true;
+        last_page_switch_ms = millis();
+        Serial.println("[WIFI] CONNECTED & VERIFIED! Resumed scoreboard.");
+      } else {
+        Serial.println("[WIFI] CONNECTION FAILED.");
+      }
+    } else if (cmd.startsWith("WIFI KEYBOARD ")) {
+      String net_name = cmd.substring(14);
+      net_name.trim();
+      strncpy(g_target_ssid, net_name.c_str(), sizeof(g_target_ssid) - 1);
+      g_target_ssid[sizeof(g_target_ssid) - 1] = '\0';
+      g_entered_pass[0] = '\0';
+      g_entered_pass_len = 0;
+      g_wifi_ui_state = WIFI_UI_KEYBOARD;
+      cyd_push_wifi_frame(canvas);
+      Serial.printf("[WIFI] Opened Touch Keyboard for '%s'.\n", g_target_ssid);
+    } else if (cmd.startsWith("TOUCH ")) {
+      int sp = cmd.indexOf(' ', 6);
+      if (sp > 0) {
+        int tx = cmd.substring(6, sp).toInt();
+        int ty = cmd.substring(sp + 1).toInt();
+        Serial.printf("[TOUCH_SIM] Injected touch (%d, %d)\n", tx, ty);
+        if (g_wifi_ui_state != WIFI_UI_INACTIVE) {
+          bool scores_ready = false;
+          cyd_wifi_handle_touch(tx, ty, canvas, scores_ready);
+          if (scores_ready) {
+            fetch_live_scores();
+            auto_tick_enabled = true;
+          }
+        } else if (detail_open) {
+          detail_open = false;
+          last_page_switch_ms = now_ms;
+        } else {
+          int card_idx = -1;
+          CydTouchAction act = cyd_touch_hit(tx, ty, &card_idx);
+          if (act == CYD_TOUCH_WIFI) {
+            cyd_wifi_open_manager(canvas);
+          } else if (act == CYD_TOUCH_NEXT) {
+            begin_transition((current_page_idx + 1) % total_pages, now_ms);
+          } else if (act == CYD_TOUCH_PREV) {
+            begin_transition((current_page_idx - 1 + total_pages) % total_pages, now_ms);
+          } else if (act == CYD_TOUCH_CARD && card_idx >= 0) {
+            detail_open = true;
+            detail_game_idx = current_page_idx * 3 + card_idx;
+          }
+        }
+      }
     } else if (cmd == "STATUS") {
       Serial.printf("[STATUS] WiFi: %s | Games: %d | Page: %d/%d | AutoTick: %s | Detail: %s | TouchDbg: %s\n",
                     is_wifi_enabled() ? "ON" : "OFF",
@@ -514,6 +613,34 @@ void loop() {
                   touched ? 1 : 0, (int)x, (int)y, raw ? 1 : 0, (int)rx, (int)ry);
   }
 
+  // 2a. Wi-Fi UI Active: Wi-Fi manager owns display & touch
+  if (g_wifi_ui_state != WIFI_UI_INACTIVE) {
+    if (touched) {
+      bool fresh_tap = !touch_was_down && (now_ms - last_touch_ms >= TOUCH_DEBOUNCE_MS);
+      touch_was_down = true;
+      if (fresh_tap) {
+        last_touch_ms = now_ms;
+        bool scores_ready = false;
+        cyd_wifi_handle_touch((int)x, (int)y, canvas, scores_ready);
+        if (scores_ready) {
+          fetch_live_scores();
+          last_page_switch_ms = now_ms;
+          auto_tick_enabled = true;
+        }
+      }
+    } else {
+      touch_was_down = false;
+    }
+
+    for (int band = 0; band < 2; ++band) {
+      int camera_y = band * CYD_BAND_H;
+      cyd_draw_wifi_ui(canvas, camera_y);
+      canvas.pushSprite(0, camera_y);
+    }
+    delay(16);
+    return;
+  }
+
   if (touched) {
     bool fresh_tap = !touch_was_down && (now_ms - last_touch_ms >= TOUCH_DEBOUNCE_MS);
     touch_was_down = true;
@@ -565,6 +692,11 @@ void loop() {
             }
             break;
           }
+          case CYD_TOUCH_WIFI:
+            auto_tick_enabled = false;
+            cyd_wifi_open_manager(canvas);
+            Serial.println("[TOUCH] Opened Wi-Fi Manager from header tap.");
+            break;
           case CYD_TOUCH_DETAIL_BACK:
             // Overlay already closed above; ignore here.
             break;
@@ -577,19 +709,30 @@ void loop() {
     touch_was_down = false;
   }
 
-  // 3. Physical Button Handling (GPIO 0 BOOT Button, active LOW, edge-triggered)
+  // 3. Physical Button Handling (GPIO 0 BOOT Button, active LOW, edge-triggered + long press)
+  static uint32_t btn_down_start_ms = 0;
+  static bool btn_long_fired = false;
   int btn_reading = digitalRead(PIN_BOOT_BTN);
   if (btn_reading == LOW) {
     if (!btn_is_down) {
       btn_is_down = true;
-      if (!detail_open && !is_syncing) {
-        begin_transition((current_page_idx + 1) % total_pages, now_ms);
-        Serial.printf("[BTN] Advanced to Page %d/%d\n", next_page_idx + 1, total_pages);
-      }
+      btn_down_start_ms = now_ms;
+      btn_long_fired = false;
+    } else if (!btn_long_fired && (now_ms - btn_down_start_ms >= 1500)) {
+      btn_long_fired = true;
+      Serial.println("[BTN] Long press detected (>1.5s): Opening Wi-Fi Setup...");
+      cyd_wifi_open_manager(canvas);
+      auto_tick_enabled = false;
     }
   } else {
     if (btn_is_down) {
       btn_is_down = false;
+      if (!btn_long_fired) {
+        if (!detail_open && !is_syncing && g_wifi_ui_state == WIFI_UI_INACTIVE) {
+          begin_transition((current_page_idx + 1) % total_pages, now_ms);
+          Serial.printf("[BTN] Advanced to Page %d/%d\n", next_page_idx + 1, total_pages);
+        }
+      }
     }
   }
 

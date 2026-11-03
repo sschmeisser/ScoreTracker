@@ -52,8 +52,9 @@ for a wide screen:
 - **Physical BOOT button** — GPIO 0 advances to the next page.
 - **Serial keep-parity** — the round tracker's serial command protocol is
   preserved, so existing host tools and screenshot capture continue to work.
-- **Live data** — optional Wi-Fi/ESPN polling (`ENABLE_WIFI`) or host JSON
-  pushes; falls back to bundled default games when offline.
+- **Live data & On-the-Fly Wi-Fi** — Standalone Wi-Fi polling with dynamic network management. Tap the header Wi-Fi indicator or long-press BOOT to open the network picker. Automatically probes open networks with live WAN validation, or enter passwords using the on-screen touch QWERTY keyboard. Credentials persist in NVS flash.
+- **Multi-Sport Coverage** — NFL, College Football (NCAAF), Men's College Basketball (NCAAM), Women's College Basketball (NCAAW), MLB, WNBA, NHL, NBA, Premier League (EPL), UEFA Champions League (UCL), UEFA Europa League (UEL), La Liga, and Bundesliga with team logos, line scores, and sport-specific leader stats.
+- **Fallback data** — bundled default games when offline.
 
 ## Pinout
 
@@ -103,11 +104,38 @@ SCORES_END     (or ABORT to cancel)
 SCORES_JSON <array>
 WIFI OFF
 WIFI ON
+WIFI SETUP      (open the on-screen network picker)
+WIFI SCAN       (scan available Wi-Fi access points)
+WIFI AUTO       (auto-probe open Wi-Fi networks with live internet check)
+WIFI CLEAR      (erase saved Wi-Fi credentials from NVS flash)
+WIFI CONNECT <ssid> [pass]  (connect directly to SSID)
+WIFI KEYBOARD <ssid>        (open on-screen keyboard for SSID)
+TOUCH <x> <y>   (simulate a touch tap at landscape coords)
 STATUS
 REFRESH        (alias: SYNC)
 TOUCHCAL
 TOUCHDEBUG
 ```
+
+## On-The-Fly Wi-Fi Management
+
+You can configure Wi-Fi directly on the screen without recompiling or reflashing:
+
+1. **How to enter Wi-Fi Setup:**
+   - Tap the **`WiFi` / `NoWiFi` indicator** in the top header bar, or
+   - Hold the physical **BOOT button (GPIO 0)** for > 1.5 seconds, or
+   - Send `WIFI SETUP` over USB serial.
+2. **Wi-Fi Network Picker:**
+   - Displays all scanned 2.4 GHz SSIDs sorted by signal strength with signal bars and `LOCK` / `OPEN` badges.
+   - Tap an open network to connect immediately.
+   - Tap a protected network to open the **Touch QWERTY Keyboard**.
+   - `[AUTO OPEN]`: Probes all detected open Wi-Fi networks in order, performs an HTTP head check (`site.api.espn.com:80`) to ensure real WAN access (bypassing captive portals), saves working credentials to NVS flash, and immediately begins streaming live scores.
+   - `[RESCAN]`: Refreshes the local Wi-Fi scan.
+   - `[DESK]`: Returns to the live scoreboard.
+3. **On-Screen Touch QWERTY Keyboard:**
+   - 5 rows: number row (`1-0`), `QWERTY`, home row `ASDFGHJKL`, `SHIFT`/caps toggle, `ZXCVBNM`, `DEL`, symbol row (`?123` / `#+=`), space bar, and `CONNECT`.
+   - Live character length counter and `[SHOW] / [HIDE]` password mask toggle.
+   - Validates connection upon submit and stores credentials in ESP32 NVS flash (`Preferences.h`).
 
 - `SCREENSHOT` streams `320 * 240 * 2` raw RGB565 bytes of the **sprite**
   between `SCREENSHOT_START` and `SCREENSHOT_END` framing, matching the round

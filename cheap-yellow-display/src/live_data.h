@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "game_data.h"
+#include "cyd_wifi_manager.h"
 
 // =============================================================================
 // BOARD-AGNOSTIC LIVE SPORTS SCORE / STORAGE / TRANSPORT LAYER
@@ -699,8 +700,11 @@ inline void cyd_init_wifi() {
                   WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i));
   }
 
-  Serial.printf("[WIFI] Connecting to %s...\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  char load_ssid[33];
+  char load_pass[65];
+  cyd_wifi_load_credentials(load_ssid, sizeof(load_ssid), load_pass, sizeof(load_pass));
+  Serial.printf("[WIFI] Connecting to %s...\n", load_ssid);
+  WiFi.begin(load_ssid, load_pass[0] ? load_pass : nullptr);
   cyd_last_wifi_reconnect_ms = millis();
 }
 
@@ -732,8 +736,11 @@ inline void poll_live_data(uint32_t interval_ms = 90000) {
     // Only re-trigger WiFi.begin if disconnected for at least 30 seconds
     if (now - cyd_last_wifi_reconnect_ms > 30000) {
       cyd_last_wifi_reconnect_ms = now;
-      Serial.println("[WIFI] Re-attempting WiFi.begin...");
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      char recon_ssid[33];
+      char recon_pass[65];
+      cyd_wifi_load_credentials(recon_ssid, sizeof(recon_ssid), recon_pass, sizeof(recon_pass));
+      Serial.printf("[WIFI] Re-attempting WiFi.begin to %s...\n", recon_ssid);
+      WiFi.begin(recon_ssid, recon_pass[0] ? recon_pass : nullptr);
     }
     return;
   }

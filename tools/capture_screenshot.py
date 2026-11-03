@@ -14,8 +14,12 @@ def capture(port="/dev/ttyUSB0", out_path="/home/stefan/Projects/ScoreTracker/to
     fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
     try:
         tty.setraw(fd)
-    except Exception:
-        pass
+        attr = termios.tcgetattr(fd)
+        attr[4] = termios.B115200
+        attr[5] = termios.B115200
+        termios.tcsetattr(fd, termios.TCSANOW, attr)
+    except Exception as e:
+        print(f"Warning: could not configure tty attributes: {e}")
     time.sleep(0.5)
 
 
@@ -36,7 +40,7 @@ def capture(port="/dev/ttyUSB0", out_path="/home/stefan/Projects/ScoreTracker/to
     start_time = time.time()
     started = False
 
-    while time.time() - start_time < 3.0:
+    while time.time() - start_time < 6.0:
         r, _, _ = select.select([fd], [], [], 0.2)
         if r:
             chunk = os.read(fd, 256)

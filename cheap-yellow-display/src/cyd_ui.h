@@ -26,7 +26,8 @@ enum CydTouchAction {
   CYD_TOUCH_NEXT,
   CYD_TOUCH_TOGGLE,
   CYD_TOUCH_CARD,
-  CYD_TOUCH_DETAIL_BACK
+  CYD_TOUCH_DETAIL_BACK,
+  CYD_TOUCH_WIFI
 };
 
 // ---- Palette (calm zen, mirrors ARCHITECTURE.md) ---------------------------
@@ -452,6 +453,20 @@ static inline void cyd_draw_header(LGFX_Sprite& c, const SportGame* games, int t
     c.setTextColor(CYD_SUB);
     c.drawString("USB", rx, hy);
     rx -= c.textWidth("USB") + 10;
+  } else {
+    // Wi-Fi interactive touch pill
+    c.setFont(&fonts::DejaVu9);
+    c.setTextDatum(textdatum_t::middle_right);
+    bool wifi_connected = (WiFi.status() == WL_CONNECTED);
+    c.setTextColor(wifi_connected ? 0x5609 : CYD_AMBER);
+    c.drawString(wifi_connected ? "WiFi" : "NoWiFi", rx, hy);
+    int dot_x = rx - c.textWidth(wifi_connected ? "WiFi" : "NoWiFi") - 5;
+    if (wifi_connected) {
+      c.fillCircle(dot_x, hy, 2, 0x5609);
+    } else {
+      c.drawCircle(dot_x, hy, 2, CYD_AMBER);
+    }
+    rx = dot_x - 8;
   }
   const int cluster_left = rx;
 
@@ -889,6 +904,11 @@ inline CydTouchAction cyd_touch_hit(int x, int y, int* card_index) {
   if (card_index) *card_index = -1;
   if (g_cyd_detail_open) return CYD_TOUCH_DETAIL_BACK; // detail overlay: any tap returns
   if (x < 0 || x >= CYD_W || y < 0 || y >= CYD_H) return CYD_TOUCH_NONE;
+
+  // Header bar tap: opens Wi-Fi setup manager
+  if (y < CYD_HEADER_H) {
+    return CYD_TOUCH_WIFI;
+  }
 
   const int zone_w = (CYD_W * TOUCH_ZONE_FRACTION_PCT) / 100; // 80 px each side
 
